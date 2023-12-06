@@ -73,7 +73,7 @@ jobs:
                 cd srbench
                 git clone https://github.com/janoPig/srbench.git
                 cd srbench
-                git checkout workflow
+                git checkout git_workflow
 
                 # current branch
                 line_old='git+https://github.com/BRANCH_PLACEHOLDER'
