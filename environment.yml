@@ -1,0 +1,16 @@
+name: srbench
+channels:
+    - conda-forge
+dependencies:
+    - python
+    - scikit-learn=0.24.1 
+    - pandas 
+    - numpy
+    - sympy
+    - tqdm
+    - pyarrow
+    - pip=20.3.3 
+    - pip:
+        - pmlb==1.0.1.post3
+        # HROCH
+        - git+https://github.com/BRANCH_PLACEHOLDER
