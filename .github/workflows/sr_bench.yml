@@ -54,6 +54,8 @@ jobs:
         id: pmlb
         
       - name: Install SRBench
+        env:
+          REPO: ${{ github.event.inputs.repository }}@${{ github.event.inputs.commit }}
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
                 echo "Install SRBench"
@@ -77,7 +79,7 @@ jobs:
 
                 # current branch
                 line_old='git+https://github.com/BRANCH_PLACEHOLDER'
-                line_new=$(echo "git+$github.event.inputs.repository@$github.event.inputs.commit")
+                line_new=$(echo "git+$REPO")
                 sed -i "s%$line_old%$line_new%g" environment.yml
 
                 # install enviroment
