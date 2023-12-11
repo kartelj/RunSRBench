@@ -24,6 +24,7 @@ on:
         - RILS-ROLS_10s
         - RILS-ROLS_1m
         - RILS-ROLS_5m
+        - RILS-ROLS_1MOPS
 
 env: 
   CACHE_NUMBER: 0
