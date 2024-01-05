@@ -2,402 +2,141 @@ name: SRBench
 
 on:
   workflow_dispatch:
-    inputs:
-      repository:
-          required: true
-          type: choice
-          options: 
-          - https://github.com/janoPig/HROCH.git
-          - https://github.com/janoPig/rils-rols.git
-      commit:
-          required: true
-          type: string 
-      regressor:
-        required: true
-        type: choice
-        options: 
-        - HROCH_1s
-        - HROCH_10s
-        - HROCH_1m
-        - HROCH_5m
-        - RILS-ROLS_1s
-        - RILS-ROLS_10s
-        - RILS-ROLS_1m
-        - RILS-ROLS_5m
-        - RILS-ROLS_1MOPS
 
 env: 
   CACHE_NUMBER: 0
 defaults:
   run:
     shell: bash
-    working-directory: /home/runner/work/
+    working-directory: .
   
 jobs:
-  cache_env:
+  
+  bb:
     runs-on: ubuntu-20.04
     steps:
-      - name: Cache conda
-        uses: actions/cache@v2
+      - uses: conda-incubator/setup-miniconda@v3
         with:
-          path:  /usr/share/miniconda/envs/srbench
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: cache
-
-      - name: Cache srbench
-        uses: actions/cache@v2
-        with:
-          path: /home/runner/work/srbench
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: srbench
-
-      - name: Cache pmlb
-        uses: actions/cache@v2
-        with:
-          path: /home/runner/work/pmlb
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: pmlb
-        
+          auto-activate-base: true
+          miniforge-version: latest
+          activate-environment: ""
+          
       - name: Install SRBench
-        env:
-          REPO: ${{ github.event.inputs.repository }}@${{ github.event.inputs.commit }}
-        if: steps.cache.outputs.cache-hit != 'true'
         run: |
                 echo "Install SRBench"
+                ls
                 pwd
-                # clone pmlb
-                #git clone https://github.com/janoPig/pmlb.git
-                #cd pmlb
-                #git lfs pull
-                #cd ..
                 
                 wget https://github.com/janoPig/pmlb/archive/refs/heads/master.zip
                 unzip master.zip
                 mv pmlb-master pmlb
-
+                
                 # clone srbench
                 mkdir srbench
                 cd srbench
-                git clone https://github.com/janoPig/srbench.git
+                git clone https://github.com/kartelj/srbench.git
                 cd srbench
+                pwd 
+                ls
                 git checkout git_workflow
 
                 # current branch
                 line_old='git+https://github.com/BRANCH_PLACEHOLDER'
-                line_new=$(echo "git+$REPO")
+                line_new='rils-rols==1.5.4'
                 sed -i "s%$line_old%$line_new%g" environment.yml
-
-                # install enviroment
-                # source /usr/share/miniconda/bin/activate
                 conda env create -f environment.yml
 
-  bbox_matrix:
-    needs: cache_env
-    strategy:
-      matrix:
-        seed: [0, 1, 2, 3, 4, 5, 6, 7 , 8, 9]
-    env:
-      SEED:  ${{ matrix.seed }}
-      
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Cache conda
-        uses: actions/cache@v2
-        with:
-          path:  /usr/share/miniconda/envs/srbench
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: cache
-
-      - name: Cache srbench
-        uses: actions/cache@v2
-        with:
-          path: /home/runner/work/srbench
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: srbench
-        
-      - name: Cache pmlb
-        uses: actions/cache@v2
-        with:
-          path: /home/runner/work/pmlb
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: pmlb
-
-      - name: BBox experiment
+      - name: BB experiment
         run: |
-                echo "BBox experiment"
+                echo "BB experiment"
                 pwd
-                mkdir -p output/output
 
                 # install enviroment
-                source /usr/share/miniconda/bin/activate
+                conda init bash
+                source ~/.bashrc # restart terminal
                 conda activate srbench
-
-                cd srbench/srbench/experiment
-
-                # black-box experiment
-                python analyze.py ../../../pmlb/datasets -n_trials 1 -starting_seed $SEED -ml ${{ github.event.inputs.regressor }} -results ../results_blackbox -skip_tuning --local -n_jobs 2 -job_limit 100000
+                conda info
                 
-                mv ../results_blackbox ../../../output/output/
+                cd srbench/srbench/experiment
+                for METHOD in "RILS-ROLS_1MOPS" ; do
+                    python analyze.py ../../../pmlb/datasets -n_trials 1 -ml $METHOD -results ../results_blackbox -skip_tuning --local -n_jobs 10 -job_limit 100000
+                done
+                
+                cd ../postprocessing
 
-      - name: Archive production artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: bbox_experiment
-          path: |
-            /home/runner/work/output
-  bbox_postprocessing:
-    needs: bbox_matrix
+                python collate_blackbox_results.py ../results_blackbox
+                
+                read -p "Press [Enter] to terminate container."
+
+            
+  gt:
     runs-on: ubuntu-20.04
     steps:
-      - name: Cache conda
-        uses: actions/cache@v2
+      - uses: conda-incubator/setup-miniconda@v3
         with:
-          path:  /usr/share/miniconda/envs/srbench
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: cache
-
-      - name: Cache srbench
-        uses: actions/cache@v2
-        with:
-          path: /home/runner/work/srbench
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: srbench
-        
-      - name: Cache pmlb
-        uses: actions/cache@v2
-        with:
-          path: /home/runner/work/pmlb
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: pmlb
-
-      - name: Download result
-        uses: actions/download-artifact@v3
-        with:
-          name: bbox_experiment
-      - name: BBox postprocess
+          auto-activate-base: true
+          miniforge-version: latest
+          activate-environment: ""
+          
+      - name: Install SRBench
         run: |
-                  echo "BBox postprocess"
-                  pwd
-                  ls
-                  mkdir -p output2/output
+                echo "Install SRBench"
+                ls
+                pwd
+                
+                wget https://github.com/janoPig/pmlb/archive/refs/heads/master.zip
+                unzip master.zip
+                mv pmlb-master pmlb
+                
+                # clone srbench
+                mkdir srbench
+                cd srbench
+                git clone https://github.com/kartelj/srbench.git
+                cd srbench
+                pwd 
+                ls
+                git checkout git_workflow
 
-                  # install enviroment
-                  source /usr/share/miniconda/bin/activate
-                  conda activate srbench
-
-                  cd srbench/srbench
-                  mv $GITHUB_WORKSPACE/output/results_blackbox .
-                  cd postprocessing
-
-                  python collate_blackbox_results.py ../results_blackbox
-                  mv ../results/black-box_results.feather ../../../output2/output/
-      - name: Archive production artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: bbox_result
-          path: |
-            /home/runner/work/output2
-  gt_matrix:
-    needs: cache_env
-    strategy:
-      matrix:
-        seed: [0, 1, 2, 3, 4, 5, 6, 7 , 8, 9]
-        noise: [0, 0.001, 0.01, 0.1]
-    env:
-      SEED:  ${{ matrix.seed }}
-      TN:  ${{ matrix.noise }}
-      
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Cache conda
-        uses: actions/cache@v2
-        with:
-          path:  /usr/share/miniconda/envs/srbench
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: cache
-
-      - name: Cache srbench
-        uses: actions/cache@v2
-        with:
-          path: /home/runner/work/srbench
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: srbench
-        
-      - name: Cache pmlb
-        uses: actions/cache@v2
-        with:
-          path: /home/runner/work/pmlb
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: pmlb
+                # current branch
+                line_old='git+https://github.com/BRANCH_PLACEHOLDER'
+                line_new='rils-rols==1.5.4'
+                sed -i "s%$line_old%$line_new%g" environment.yml
+                conda env create -f environment.yml
 
       - name: GT experiment
         run: |
                 echo "GT experiment"
                 pwd
-                mkdir -p output/output
 
                 # install enviroment
-                source /usr/share/miniconda/bin/activate
+                conda init bash
+                source ~/.bashrc # restart terminal
                 conda activate srbench
+                conda info
                 
                 cd srbench/srbench/experiment
-
-                # submit the ground-truth dataset experiment. 
-                for data in "../../../pmlb/datasets/strogatz_" "../../../pmlb/datasets/feynman_" ; do # feynman and strogatz datasets
-                    python analyze.py \
-                        $data"*" \
-                        -results ../results_sym_data \
-                        -n_trials 1 \
-                        -starting_seed $SEED \
-                        -ml ${{ github.event.inputs.regressor }} \
-                        --local \
-                        -target_noise $TN \
-                        -sym_data \
-                        -job_limit 100000 \
-                        -skip_tuning \
-                        -n_jobs 2
-                    if [ $? -gt 0 ] ; then
-                        break
-                    fi
-                done
-                
-                mv ../results_sym_data ../../../output/output/
-      - name: Archive production artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: gt_experiment_${{ matrix.seed }}
-          path: |
-            /home/runner/work/output
-  gt_sympy:
-    needs: gt_matrix
-    strategy:
-      matrix:
-        seed: [0, 1, 2, 3, 4, 5, 6, 7 , 8, 9]
-    env:
-      SEED:  ${{ matrix.seed }}
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Cache conda
-        uses: actions/cache@v2
-        with:
-          path:  /usr/share/miniconda/envs/srbench
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: cache
-
-      - name: Cache srbench
-        uses: actions/cache@v2
-        with:
-          path: /home/runner/work/srbench
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: srbench
-        
-      - name: Cache pmlb
-        uses: actions/cache@v2
-        with:
-          path: /home/runner/work/pmlb
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: pmlb
-
-      - name: Download result
-        uses: actions/download-artifact@v3
-        with:
-          name: gt_experiment_${{ matrix.seed }}
-      - name: GT sympy
-        run: |
-                echo "GT sympy"
-                pwd
-                ls
-                mkdir -p output2/output
-
-                cd srbench/srbench
-                mv $GITHUB_WORKSPACE/output/results_sym_data .
-
-                # install enviroment
-                source /usr/share/miniconda/bin/activate
-                conda activate srbench
-                
-                cd experiment
-                
-                # assess the ground-truth models that were produced using sympy
-                for data in "../../../pmlb/datasets/strogatz_" "../../../pmlb/datasets/feynman_" ; do # feynman and strogatz datasets
-                    for TN in 0 0.001 0.01 0.1; do # noise levels
-                        python analyze.py \
-                            -script assess_symbolic_model \
-                            $data"*" \
-                            -results ../results_sym_data \
-                            -target_noise $TN \
-                            -ml ${{ github.event.inputs.regressor }} \
-                            --local \
-                            -sym_data \
-                            -n_trials 1 \
-                            -starting_seed $SEED \
-                            -job_limit 100000 \
-                            -n_jobs 2
-                        if [ $? -gt 0 ] ; then
-                            break
-                        fi
+                for METHOD in "RILS-ROLS_1MOPS" ; do 
+                    for TN in 0 ; do # 0.001 0.01 0.1
+                        # submit the ground-truth dataset experiment. 
+                        for data in "../../../pmlb/datasets/strogatz_" "../../../pmlb/datasets/feynman_" ; do # feynman and strogatz datasets
+                            python analyze.py $data"*" -results ../results_sym_data -n_trials 10 -ml $METHOD --local -target_noise $TN -sym_data -job_limit 100000 -skip_tuning -n_jobs 10 --noskips
+                            if [ $? -gt 0 ] ; then
+                                break
+                            fi
+                        done
+                        
+                        
+                        for data in "../../../pmlb/datasets/strogatz_" "../../../pmlb/datasets/feynman_" ; do # feynman and strogatz datasets
+                            python analyze.py -script assess_symbolic_model $data"*" -results ../results_sym_data -target_noise $TN -ml $METHOD --local -sym_data -n_trials 10 -job_limit 100000 -n_jobs 10 --noskips
+                                if [ $? -gt 0 ] ; then
+                                    break
+                                fi
+                        done
                     done
                 done
                 
-                mv ../results_sym_data ../../../output2/output/
-
-      - name: Archive production artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: gt_sympy
-          path: |
-            /home/runner/work/output2
-  gt_postprocessing:
-    needs: gt_sympy
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Cache conda
-        uses: actions/cache@v2
-        with:
-          path:  /usr/share/miniconda/envs/srbench
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: cache
-
-      - name: Cache srbench
-        uses: actions/cache@v2
-        with:
-          path: /home/runner/work/srbench
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: srbench
-        
-      - name: Cache pmlb
-        uses: actions/cache@v2
-        with:
-          path: /home/runner/work/pmlb
-          key: ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ github.event.inputs.repository }}-${{ github.event.inputs.commit }}
-        id: pmlb
-
-      - name: Download result
-        uses: actions/download-artifact@v3
-        with:
-          name: gt_sympy
-      - name: GT postprocess
-        run: |
-                echo "GT postprocess"
-                pwd
-                ls
-                mkdir -p output2/output
-
-                cd srbench/srbench
-                mv $GITHUB_WORKSPACE/output/results_sym_data .
-
-                # install enviroment
-                source /usr/share/miniconda/bin/activate
-                conda activate srbench
-                
-                cd postprocessing
+                cd ../postprocessing
 
                 python collate_groundtruth_results.py ../results_sym_data
-                mv ../results/ground-truth_results.feather ../../../output2/output/
-
-      - name: Archive production artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: gt_result
-          path: |
-            /home/runner/work/output2
+                
+                read -p "Press [Enter] to terminate container."
